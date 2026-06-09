@@ -6,13 +6,15 @@ import {
   ChevronDown,
   Clock3,
   Compass,
+  Goal,
+  HelpCircle,
   ImageUp,
   Info,
   Leaf,
   ListChecks,
   PenLine,
   Plus,
-  Target,
+  Settings,
   Trash2,
   TrendingUp,
   UserRound,
@@ -110,10 +112,11 @@ export function IdentityCompassApp() {
   }
 
   return (
-    <main className="min-h-screen bg-[#fbfcfb] pb-28 text-[#111815]">
-      <div className="mx-auto flex w-full max-w-[920px] flex-col gap-5 px-4 py-5 sm:px-8 sm:py-7">
-        <header className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
+    <main className="min-h-screen bg-[#fbfcfb] pb-28 text-[#111815] lg:h-screen lg:overflow-hidden lg:pb-0 lg:pl-[204px] xl:pl-[228px]">
+      <DesktopSidebar />
+      <div className="mx-auto flex w-full max-w-[920px] flex-col gap-5 px-4 py-5 sm:px-8 sm:py-7 lg:h-screen lg:max-w-[1664px] lg:gap-3 lg:px-5 lg:py-5 xl:px-7">
+        <header className="flex items-center justify-between gap-3 lg:h-11 lg:justify-end">
+          <div className="flex min-w-0 items-center gap-3 lg:hidden">
             <div className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-[#0b9f55]/35 bg-white text-[#0b9f55] shadow-sm">
               <Compass size={24} strokeWidth={2.1} aria-hidden="true" />
             </div>
@@ -122,6 +125,16 @@ export function IdentityCompassApp() {
             </h1>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            <label className="hidden h-11 cursor-pointer items-center justify-center gap-2 rounded-full border border-black/10 bg-white px-4 text-sm font-semibold text-[#0b9f55] shadow-sm transition hover:bg-[#f4fbf7] lg:inline-flex">
+              <ImageUp size={17} aria-hidden="true" />
+              Upload
+              <input
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                onChange={handleScreenshot}
+              />
+            </label>
             <div className="hidden items-center gap-2 rounded-full border border-black/10 bg-white px-4 py-3 text-sm font-medium shadow-sm sm:flex">
               Today, {todayLabel()}
               <CalendarDays size={18} aria-hidden="true" />
@@ -132,20 +145,22 @@ export function IdentityCompassApp() {
           </div>
         </header>
 
-        <ScreenTimeInput
-          screenshotUrl={screenshotUrl}
-          onScreenshotChange={handleScreenshot}
-        />
+        <div className="lg:hidden">
+          <ScreenTimeInput
+            screenshotUrl={screenshotUrl}
+            onScreenshotChange={handleScreenshot}
+          />
+        </div>
 
-        <section className="grid gap-6 rounded-[28px] bg-white px-7 py-8 shadow-[0_16px_50px_rgba(17,24,21,0.06)] ring-1 ring-black/[0.04] sm:grid-cols-[0.78fr_1.22fr] sm:px-9">
-          <div className="flex min-w-0 flex-col justify-center border-black/10 sm:border-r sm:pr-8">
-            <div className="mb-4 text-xs font-semibold uppercase text-[#4e5853]">
+        <section className="grid gap-6 rounded-[28px] bg-white px-7 py-8 shadow-[0_16px_50px_rgba(17,24,21,0.06)] ring-1 ring-black/[0.04] sm:grid-cols-[0.78fr_1.22fr] sm:px-9 lg:h-[clamp(238px,27vh,318px)] lg:gap-4 lg:px-7 lg:py-5">
+          <div className="flex min-w-0 flex-col justify-center border-black/10 sm:border-r sm:pr-8 lg:pr-7">
+            <div className="mb-4 text-xs font-semibold uppercase text-[#4e5853] lg:mb-3">
               Goal Identity
             </div>
             <div className="relative mb-3">
               <select
                 className="w-full appearance-none rounded-2xl border border-transparent bg-transparent py-1 pr-10 font-semibold text-[#0b9f55] outline-none hover:border-black/10 focus:border-[#0b9f55]/35"
-                style={{ fontSize: "48px", lineHeight: 1 }}
+                style={{ fontSize: "clamp(32px, 3.1vw, 48px)", lineHeight: 1 }}
                 value={goalName}
                 aria-label="Goal identity"
                 onChange={(event) => setGoalName(event.target.value)}
@@ -160,11 +175,11 @@ export function IdentityCompassApp() {
                 aria-hidden="true"
               />
             </div>
-            <p className="max-w-[220px] text-[19px] leading-7 text-[#4c5651]">
+            <p className="max-w-[220px] text-[19px] leading-7 text-[#4c5651] lg:text-[16px] lg:leading-6">
               {goal.description}
             </p>
-            <Target
-              className="mt-9 text-[#0b9f55]"
+            <Goal
+              className="mt-9 h-[72px] w-[72px] text-[#0b9f55] lg:mt-4 lg:h-12 lg:w-12 xl:h-14 xl:w-14"
               size={72}
               strokeWidth={1.7}
               aria-hidden="true"
@@ -172,19 +187,19 @@ export function IdentityCompassApp() {
           </div>
 
           <div className="flex min-w-0 flex-col items-center justify-center text-center">
-            <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase text-[#4e5853]">
+            <div className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase text-[#4e5853]">
               Identity Score
               <Info size={15} aria-label="Score is based on the app usage you confirm below." />
             </div>
             <div className="flex items-end justify-center leading-none">
-              <span className="text-[116px] font-semibold text-[#08a451] sm:text-[150px]">
+              <span className="text-[116px] font-semibold text-[#08a451] sm:text-[150px] lg:!text-[100px] xl:!text-[110px]">
                 {score}
               </span>
-              <span className="mb-5 ml-2 text-[22px] text-[#29332e]">/ 100</span>
+              <span className="mb-3 ml-2 text-[20px] text-[#29332e]">/ 100</span>
             </div>
             <div
               className={[
-                "mb-5 inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold",
+                "mb-3 inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold lg:py-1.5",
                 delta >= 0
                   ? "bg-[#eefaf2] text-[#0b8e4c]"
                   : "bg-[#fff0f1] text-[#c63043]",
@@ -198,7 +213,7 @@ export function IdentityCompassApp() {
               {delta >= 0 ? "+" : ""}
               {delta} pts vs yesterday
             </div>
-            <p className="max-w-[280px] text-[19px] leading-7 text-[#29332e]">
+            <p className="max-w-[280px] text-[18px] leading-7 text-[#29332e] lg:text-[16px] lg:leading-6">
               You are{" "}
               <span className="font-semibold text-[#08a451]">{score}%</span>{" "}
               aligned with your goal
@@ -212,21 +227,75 @@ export function IdentityCompassApp() {
           antiIdentity={goal.antiIdentity}
         />
 
-        <section className="grid gap-5 sm:grid-cols-[1fr_1.1fr]">
+        <section className="grid gap-5 sm:grid-cols-[1fr_1.1fr] lg:min-h-0 lg:flex-1 lg:gap-4">
           <IdentityMix items={topMix} />
           <ScoreDrivers pullingUp={pullingUp} pullingDown={pullingDown} />
         </section>
 
-        <ActivityEditor
-          activities={activities}
-          onAdd={addActivity}
-          onRemove={removeActivity}
-          onUpdate={updateActivity}
-        />
+        <div className="lg:hidden">
+          <ActivityEditor
+            activities={activities}
+            onAdd={addActivity}
+            onRemove={removeActivity}
+            onUpdate={updateActivity}
+          />
+        </div>
       </div>
 
       <BottomNav />
     </main>
+  );
+}
+
+function DesktopSidebar() {
+  return (
+    <aside className="fixed inset-y-0 left-0 hidden w-[204px] border-r border-black/[0.06] bg-white px-5 py-7 lg:flex lg:flex-col xl:w-[228px] xl:px-6">
+      <div className="mb-11 flex items-center gap-3">
+        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-[#0b9f55]/35 bg-white text-[#0b9f55] shadow-sm">
+          <Compass size={22} strokeWidth={2.1} aria-hidden="true" />
+        </div>
+        <h1 className="min-w-0 whitespace-nowrap text-[14px] font-semibold leading-6 xl:text-[16px]">
+          Identity Compass
+        </h1>
+      </div>
+
+      <nav className="space-y-2 text-[16px]">
+        <SidebarItem active icon={Compass} label="Overview" />
+        <SidebarItem icon={TrendingUp} label="Trends" />
+        <SidebarItem icon={Clock3} label="Activities" />
+        <SidebarItem icon={UserRound} label="Profile" />
+      </nav>
+
+      <div className="mt-auto space-y-2 text-[16px]">
+        <SidebarItem icon={Settings} label="Settings" />
+        <SidebarItem icon={HelpCircle} label="Help" />
+      </div>
+    </aside>
+  );
+}
+
+function SidebarItem({
+  icon: Icon,
+  label,
+  active = false,
+}: {
+  icon: typeof Compass;
+  label: string;
+  active?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      className={[
+        "flex h-12 w-full items-center gap-3 rounded-2xl px-3 text-left transition",
+        active
+          ? "bg-[#f2faf5] font-semibold text-[#0b9f55]"
+          : "text-[#303934] hover:bg-black/[0.035]",
+      ].join(" ")}
+    >
+      <Icon className="shrink-0" size={22} strokeWidth={1.9} aria-hidden="true" />
+      <span className="min-w-0 truncate">{label}</span>
+    </button>
   );
 }
 
@@ -294,36 +363,41 @@ function AlignmentBar({
   antiIdentity: string;
 }) {
   const indicatorPosition = 100 - score;
+  const markerLeft = `${indicatorPosition}%`;
 
   return (
-    <section className="rounded-[28px] bg-white px-6 py-8 shadow-[0_16px_50px_rgba(17,24,21,0.05)] ring-1 ring-black/[0.04] sm:px-9">
-      <div className="mb-7 text-xs font-semibold uppercase text-[#4e5853]">
+    <section className="rounded-[28px] bg-white px-6 py-8 shadow-[0_16px_50px_rgba(17,24,21,0.05)] ring-1 ring-black/[0.04] sm:px-9 lg:h-[clamp(198px,21.5vh,252px)] lg:px-7 lg:py-5">
+      <div className="mb-7 text-xs font-semibold uppercase text-[#4e5853] lg:mb-3">
         Alignment To Goal
       </div>
-      <div className="mb-3 flex items-center justify-between text-[16px] font-medium">
+      <div className="mb-3 flex items-center justify-between text-[16px] font-medium lg:text-[15px]">
         <span className="text-[#0b9f55]">{goalIdentity}</span>
         <span className="text-[#303934]">{antiIdentity}</span>
       </div>
-      <div className="relative h-16">
-        <div className="absolute left-0 right-0 top-4 h-2 rounded-full bg-[#eceeed]">
+      <div className="relative h-20 lg:h-[104px]">
+        <div className="absolute left-0 right-0 top-3 h-2 rounded-full bg-[#eceeed]">
           <div
             className="h-full rounded-full bg-[#0b9f55]"
             style={{ width: `${indicatorPosition}%` }}
           />
         </div>
         <div
-          className="absolute top-0 h-10 w-10 -translate-x-1/2 rounded-full border-[7px] border-[#0b9f55] bg-white shadow-[0_6px_18px_rgba(11,159,85,0.22)]"
-          style={{ left: `${indicatorPosition}%` }}
+          data-role="alignment-marker"
+          className="absolute top-0 h-10 w-10 -translate-x-1/2 rounded-full border-[7px] border-[#0b9f55] bg-white shadow-[0_6px_18px_rgba(11,159,85,0.22)] lg:h-8 lg:w-8 lg:border-[6px]"
+          style={{ left: markerLeft }}
         />
-      </div>
-      <div
-        className="mx-auto -mt-2 w-fit rounded-[20px] bg-[#f4fbf7] px-8 py-4 text-center shadow-sm"
-        style={{ transform: `translateX(${score > 72 ? "-8%" : "0"})` }}
-      >
-        <p className="text-sm font-semibold">You are here</p>
-        <p className="mt-1 text-sm text-[#0b9f55]">
-          {score}% toward {goalIdentity}
-        </p>
+        <div
+          data-role="alignment-callout"
+          className="absolute top-11 w-[178px] -translate-x-1/2 rounded-[18px] bg-[#f4fbf7] px-5 py-3 text-center shadow-sm ring-1 ring-black/[0.03] lg:top-12 lg:w-[164px] lg:px-4 lg:py-2.5"
+          style={{ left: markerLeft }}
+        >
+          <p className="truncate text-sm font-semibold lg:text-[13px]">
+            You are here
+          </p>
+          <p className="mt-1 truncate text-sm text-[#0b9f55] lg:text-[13px]">
+            {score}% toward {goalIdentity}
+          </p>
+        </div>
       </div>
     </section>
   );
@@ -335,8 +409,8 @@ function IdentityMix({
   items: ReturnType<typeof getTopConstructiveMix>;
 }) {
   return (
-    <section className="rounded-[28px] bg-white px-6 py-7 shadow-[0_16px_50px_rgba(17,24,21,0.05)] ring-1 ring-black/[0.04]">
-      <div className="mb-7 text-xs font-semibold uppercase text-[#4e5853]">
+    <section className="overflow-hidden rounded-[28px] bg-white px-6 py-7 shadow-[0_16px_50px_rgba(17,24,21,0.05)] ring-1 ring-black/[0.04] lg:px-5 lg:py-3.5">
+      <div className="mb-7 text-xs font-semibold uppercase text-[#4e5853] lg:mb-4">
         Today&apos;s Identity Mix
       </div>
       <div className="grid grid-cols-3 divide-x divide-black/10">
@@ -346,24 +420,24 @@ function IdentityMix({
           return (
             <div key={item.dimension} className="min-w-0 px-3 first:pl-0 last:pr-0">
               <div
-                className="mb-4 grid h-11 w-11 place-items-center rounded-2xl"
+                className="mb-4 grid h-11 w-11 place-items-center rounded-2xl lg:mb-2 lg:h-8 lg:w-8"
                 style={{
                   backgroundColor: `${item.color}14`,
                   color: item.color,
                 }}
               >
-                <Icon size={25} strokeWidth={1.9} aria-hidden="true" />
+                <Icon size={22} strokeWidth={1.9} aria-hidden="true" />
               </div>
-              <p className="truncate text-[17px] font-semibold">
+              <p className="truncate text-[17px] font-semibold lg:text-[15px]">
                 {item.dimension}
               </p>
               <p
-                className="mt-1 text-[30px] font-semibold leading-none"
+                className="mt-1 text-[30px] font-semibold leading-none lg:text-[25px]"
                 style={{ color: item.color }}
               >
                 {item.score}
               </p>
-              <div className="mt-5 h-2 rounded-full bg-[#e8ebe9]">
+              <div className="mt-5 h-2 rounded-full bg-[#e8ebe9] lg:mt-2.5">
                 <div
                   className="h-full rounded-full"
                   style={{
@@ -378,7 +452,7 @@ function IdentityMix({
       </div>
       <button
         type="button"
-        className="mx-auto mt-7 flex h-10 items-center justify-center gap-2 rounded-full px-4 text-sm font-medium text-[#39443e] transition hover:bg-black/[0.04]"
+        className="mx-auto mt-7 flex h-10 items-center justify-center gap-2 rounded-full px-4 text-sm font-medium text-[#39443e] transition hover:bg-black/[0.04] lg:mt-2 lg:h-8"
       >
         View all dimensions
         <ChevronDown size={17} aria-hidden="true" />
@@ -395,14 +469,14 @@ function ScoreDrivers({
   pullingDown: ReturnType<typeof getContributions>;
 }) {
   return (
-    <section className="rounded-[28px] bg-white px-6 py-7 shadow-[0_16px_50px_rgba(17,24,21,0.05)] ring-1 ring-black/[0.04]">
-      <div className="mb-7 flex items-center justify-between gap-4">
+    <section className="overflow-hidden rounded-[28px] bg-white px-6 py-7 shadow-[0_16px_50px_rgba(17,24,21,0.05)] ring-1 ring-black/[0.04] lg:px-5 lg:py-3.5">
+      <div className="mb-7 flex items-center justify-between gap-4 lg:mb-3">
         <div className="text-xs font-semibold uppercase text-[#4e5853]">
           What Shaped Your Score
         </div>
         <button
           type="button"
-          className="shrink-0 rounded-full px-3 py-2 text-sm font-medium text-[#303934] transition hover:bg-black/[0.04]"
+          className="shrink-0 rounded-full px-3 py-1.5 text-sm font-medium text-[#303934] transition hover:bg-black/[0.04]"
         >
           View all
         </button>
@@ -429,10 +503,10 @@ function DriverColumn({
   positive?: boolean;
 }) {
   return (
-    <div className={positive ? "pr-4" : "pl-4"}>
+    <div className={positive ? "pr-3" : "pl-3"}>
       <div
         className={[
-          "mb-4 flex items-center gap-2 text-[11px] font-semibold uppercase",
+          "mb-4 flex items-center gap-2 text-[11px] font-semibold uppercase lg:mb-2.5 lg:text-[10px]",
           positive ? "text-[#0b9f55]" : "text-[#cf3044]",
         ].join(" ")}
       >
@@ -443,19 +517,21 @@ function DriverColumn({
           aria-hidden="true"
         />
       </div>
-      <div className="space-y-4">
+      <div className="space-y-4 lg:space-y-2">
         {items.map((item) => (
           <div key={item.id} className="grid grid-cols-[30px_minmax(0,1fr)_auto] items-center gap-3">
             <AppBadge app={item.app} />
             <div className="min-w-0">
-              <p className="truncate text-[14px] font-semibold">{item.app}</p>
+              <p className="truncate text-[14px] font-semibold lg:text-[13px]">
+                {item.app}
+              </p>
               <p className="mt-0.5 text-xs text-[#68736d]">
                 {formatDuration(item.minutes)}
               </p>
             </div>
             <p
               className={[
-                "text-sm font-semibold",
+                "text-sm font-semibold lg:text-[13px]",
                 positive ? "text-[#0b9f55]" : "text-[#cf3044]",
               ].join(" ")}
             >
@@ -480,7 +556,7 @@ function AppBadge({ app }: { app: string }) {
 
   return (
     <div
-      className={`grid h-[30px] w-[30px] place-items-center rounded-[9px] text-[11px] font-bold ${color}`}
+      className={`grid h-[30px] w-[30px] place-items-center rounded-[9px] text-[11px] font-bold lg:h-7 lg:w-7 lg:rounded-lg lg:text-[10px] ${color}`}
       aria-hidden="true"
     >
       {initials}
