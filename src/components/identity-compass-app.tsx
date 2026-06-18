@@ -15,28 +15,33 @@ import {
   PenLine,
   Plus,
   Settings,
-  Trash2,
   TrendingUp,
   UserRound,
 } from "lucide-react";
-import { ChangeEvent, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ScreenTimeConfirmation } from "@/components/screen-time-confirmation";
 import {
-  Activity,
-  Dimension,
-  defaultActivities,
-  dimensions,
+  calculateIdentityScore,
+  defaultScreenTimeItems,
   formatDuration,
-  getContributions,
-  getScore,
-  getTopConstructiveMix,
   goals,
 } from "@/lib/identity-score";
+import type {
+  AnalyzeScreenTimeResponse,
+} from "@/lib/screen-time-parser";
+import type {
+  ContributionItem,
+  IdentityMixItem,
+  ScreenTimeItem,
+} from "@/lib/identity-score";
+
+type ImportStatus = "idle" | "parsing" | "ready" | "error";
 
 const dimensionIcons = {
   Builder: Leaf,
   Learner: BookOpen,
   Creator: PenLine,
-  Connector: TrendingUp,
+  Operator: TrendingUp,
   Athlete: Clock3,
   Explorer: Compass,
   Consumer: Clock3,
@@ -64,51 +69,131 @@ function makeId() {
 
 export function IdentityCompassApp() {
   const [goalName, setGoalName] = useState("Founder");
-  const [activities, setActivities] = useState<Activity[]>(defaultActivities);
+  const [screenTimeItems, setScreenTimeItems] =
+    useState<ScreenTimeItem[]>(defaultScreenTimeItems);
+  const [draftItems, setDraftItems] = useState<ScreenTimeItem[]>([]);
+  const [importStatus, setImportStatus] = useState<ImportStatus>("idle");
+  const [importError, setImportError] = useState<string | null>(null);
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
+  const importRequestId = useRef(0);
 
-  const goal = goals.find((item) => item.name === goalName) ?? goals[0];
-  const score = useMemo(() => getScore(activities), [activities]);
+  const scoreResult = useMemo(
+    () => calculateIdentityScore(screenTimeItems, goalName),
+    [screenTimeItems, goalName],
+  );
+  const goal = scoreResult.goal;
+  const score = scoreResult.score;
   const delta = score - 67;
-  const topMix = useMemo(() => getTopConstructiveMix(activities), [activities]);
-  const contributions = useMemo(() => getContributions(activities), [activities]);
-  const pullingUp = contributions.filter((item) => item.contribution > 0).slice(0, 3);
-  const pullingDown = contributions
-    .filter((item) => item.contribution < 0)
-    .slice(0, 3);
+  const topMix = scoreResult.topMix;
+  const pullingUp = scoreResult.pullingUp;
+  const pullingDown = scoreResult.pullingDown;
 
-  function updateActivity(id: string, patch: Partial<Activity>) {
-    setActivities((current) =>
-      current.map((activity) =>
-        activity.id === id ? { ...activity, ...patch } : activity,
+  useEffect(() => {
+    return () => {
+      if (screenshotUrl) {
+        URL.revokeObjectURL(screenshotUrl);
+      }
+    };
+  }, [screenshotUrl]);
+
+  function updateDraftItem(id: string, patch: Partial<ScreenTimeItem>) {
+    setDraftItems((current) =>
+      current.map((item) =>
+        item.id === id ? { ...item, ...patch } : item,
       ),
     );
   }
 
-  function addActivity() {
-    setActivities((current) => [
+  function addDraftItem() {
+    setDraftItems((current) => [
       ...current,
       {
         id: makeId(),
-        app: "New app",
+        appName: "New app",
         minutes: 30,
-        primaryDimension: "Builder",
+        source: "manual",
+        dimensionOverride: "Builder",
       },
     ]);
   }
 
-  function removeActivity(id: string) {
-    setActivities((current) => current.filter((activity) => activity.id !== id));
+  function removeDraftItem(id: string) {
+    setDraftItems((current) => current.filter((item) => item.id !== id));
   }
 
-  function handleScreenshot(event: ChangeEvent<HTMLInputElement>) {
+  function closeImportReview() {
+    importRequestId.current += 1;
+    setImportStatus("idle");
+    setDraftItems([]);
+    setImportError(null);
+  }
+
+  function confirmImport() {
+    setScreenTimeItems(draftItems);
+    closeImportReview();
+  }
+
+  async function handleScreenshot(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
 
     if (!file) {
       return;
     }
 
+    const requestId = importRequestId.current + 1;
+    importRequestId.current = requestId;
+
     setScreenshotUrl(URL.createObjectURL(file));
+    setImportStatus("parsing");
+    setImportError(null);
+    setDraftItems([]);
+
+    const formData = new FormData();
+    formData.append("screenshot", file);
+
+    try {
+      const response = await fetch("/api/screen-time/analyze", {
+        method: "POST",
+        body: formData,
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          payload?.error?.message ?? "Could not parse this screenshot.",
+        );
+      }
+
+      const result = payload as AnalyzeScreenTimeResponse;
+
+      if (importRequestId.current !== requestId) {
+        return;
+      }
+
+      setDraftItems(
+        result.items.map((item) => ({
+          id: item.id,
+          appName: item.appName,
+          minutes: item.minutes,
+          source: "screenshot",
+          confidence: item.confidence,
+        })),
+      );
+      setImportStatus("ready");
+    } catch (error) {
+      if (importRequestId.current !== requestId) {
+        return;
+      }
+
+      setImportError(
+        error instanceof Error
+          ? error.message
+          : "Could not parse this screenshot.",
+      );
+      setImportStatus("error");
+    } finally {
+      event.target.value = "";
+    }
   }
 
   return (
@@ -232,15 +317,21 @@ export function IdentityCompassApp() {
           <ScoreDrivers pullingUp={pullingUp} pullingDown={pullingDown} />
         </section>
 
-        <div className="lg:hidden">
-          <ActivityEditor
-            activities={activities}
-            onAdd={addActivity}
-            onRemove={removeActivity}
-            onUpdate={updateActivity}
-          />
-        </div>
       </div>
+
+      {importStatus !== "idle" ? (
+        <ScreenTimeConfirmation
+          status={importStatus}
+          items={draftItems}
+          screenshotUrl={screenshotUrl}
+          errorMessage={importError}
+          onAdd={addDraftItem}
+          onCancel={closeImportReview}
+          onConfirm={confirmImport}
+          onRemove={removeDraftItem}
+          onUpdate={updateDraftItem}
+        />
+      ) : null}
 
       <BottomNav />
     </main>
@@ -406,7 +497,7 @@ function AlignmentBar({
 function IdentityMix({
   items,
 }: {
-  items: ReturnType<typeof getTopConstructiveMix>;
+  items: IdentityMixItem[];
 }) {
   return (
     <section className="overflow-hidden rounded-[28px] bg-white px-6 py-7 shadow-[0_16px_50px_rgba(17,24,21,0.05)] ring-1 ring-black/[0.04] lg:px-5 lg:py-3.5">
@@ -465,8 +556,8 @@ function ScoreDrivers({
   pullingUp,
   pullingDown,
 }: {
-  pullingUp: ReturnType<typeof getContributions>;
-  pullingDown: ReturnType<typeof getContributions>;
+  pullingUp: ContributionItem[];
+  pullingDown: ContributionItem[];
 }) {
   return (
     <section className="overflow-hidden rounded-[28px] bg-white px-6 py-7 shadow-[0_16px_50px_rgba(17,24,21,0.05)] ring-1 ring-black/[0.04] lg:px-5 lg:py-3.5">
@@ -499,7 +590,7 @@ function DriverColumn({
   positive = false,
 }: {
   title: string;
-  items: ReturnType<typeof getContributions>;
+  items: ContributionItem[];
   positive?: boolean;
 }) {
   return (
@@ -520,10 +611,10 @@ function DriverColumn({
       <div className="space-y-4 lg:space-y-2">
         {items.map((item) => (
           <div key={item.id} className="grid grid-cols-[30px_minmax(0,1fr)_auto] items-center gap-3">
-            <AppBadge app={item.app} />
+            <AppBadge app={item.appName} />
             <div className="min-w-0">
               <p className="truncate text-[14px] font-semibold lg:text-[13px]">
-                {item.app}
+                {item.appName}
               </p>
               <p className="mt-0.5 text-xs text-[#68736d]">
                 {formatDuration(item.minutes)}
@@ -561,94 +652,6 @@ function AppBadge({ app }: { app: string }) {
     >
       {initials}
     </div>
-  );
-}
-
-function ActivityEditor({
-  activities,
-  onAdd,
-  onRemove,
-  onUpdate,
-}: {
-  activities: Activity[];
-  onAdd: () => void;
-  onRemove: (id: string) => void;
-  onUpdate: (id: string, patch: Partial<Activity>) => void;
-}) {
-  return (
-    <section className="rounded-[28px] bg-white px-5 py-6 shadow-[0_16px_50px_rgba(17,24,21,0.05)] ring-1 ring-black/[0.04] sm:px-7">
-      <div className="mb-5 flex items-center justify-between gap-4">
-        <div>
-          <div className="text-xs font-semibold uppercase text-[#4e5853]">
-            Confirm Screenshot Data
-          </div>
-          <p className="mt-2 text-sm text-[#68736d]">
-            Edit these rows to match the Screen Time screenshot.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onAdd}
-          className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#0b9f55] text-white shadow-[0_10px_25px_rgba(11,159,85,0.22)]"
-          aria-label="Add activity"
-          title="Add activity"
-        >
-          <Plus size={22} aria-hidden="true" />
-        </button>
-      </div>
-      <div className="space-y-3">
-        {activities.map((activity) => (
-          <div
-            key={activity.id}
-            className="grid grid-cols-[1fr_84px] gap-3 rounded-[20px] border border-black/[0.06] bg-[#fcfdfc] p-3 sm:grid-cols-[1.2fr_90px_150px_42px]"
-          >
-            <input
-              value={activity.app}
-              onChange={(event) =>
-                onUpdate(activity.id, { app: event.target.value })
-              }
-              aria-label="App name"
-              className="min-w-0 rounded-2xl border border-black/[0.06] bg-white px-3 py-3 text-sm font-semibold outline-none focus:border-[#0b9f55]/45"
-            />
-            <input
-              type="number"
-              min="0"
-              value={activity.minutes}
-              onChange={(event) =>
-                onUpdate(activity.id, {
-                  minutes: Number(event.target.value) || 0,
-                })
-              }
-              aria-label="Minutes"
-              className="min-w-0 rounded-2xl border border-black/[0.06] bg-white px-3 py-3 text-sm font-semibold outline-none focus:border-[#0b9f55]/45"
-            />
-            <select
-              value={activity.primaryDimension}
-              onChange={(event) =>
-                onUpdate(activity.id, {
-                  primaryDimension: event.target.value as Dimension,
-                })
-              }
-              aria-label="Identity dimension"
-              className="col-span-2 rounded-2xl border border-black/[0.06] bg-white px-3 py-3 text-sm font-semibold outline-none focus:border-[#0b9f55]/45 sm:col-span-1"
-            >
-              {dimensions.map((dimension) => (
-                <option key={dimension}>{dimension}</option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={() => onRemove(activity.id)}
-              className="col-span-2 grid h-11 place-items-center rounded-full text-[#cf3044] transition hover:bg-[#fff0f1] sm:col-span-1"
-              aria-label={`Remove ${activity.app}`}
-              title={`Remove ${activity.app}`}
-            >
-              <Trash2 size={18} aria-hidden="true" />
-            </button>
-          </div>
-        ))}
-      </div>
-    </section>
   );
 }
 
