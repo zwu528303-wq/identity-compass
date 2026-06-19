@@ -1,3 +1,6 @@
+import { jsonSchemaOutputFormat } from "@anthropic-ai/sdk/helpers/json-schema";
+import { getAnthropicClient } from "@/lib/anthropic";
+
 export type ParsedScreenTimeItem = {
   id: string;
   appName: string;
@@ -28,51 +31,56 @@ export type AnalyzeScreenTimeError = {
 };
 
 const maxUploadBytes = 8 * 1024 * 1024;
+const defaultScreenTimeModel = "claude-haiku-4-5-20251001";
 
-const mockParsedItems: ParsedScreenTimeItem[] = [
-  {
-    id: "parsed_cursor",
-    appName: "Cursor",
-    minutes: 102,
-    originalText: "Cursor 1h 42m",
-    confidence: 0.96,
+type SupportedImageMediaType =
+  | "image/jpeg"
+  | "image/png"
+  | "image/gif"
+  | "image/webp";
+
+const supportedImageMediaTypes = new Set<SupportedImageMediaType>([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+]);
+
+const screenTimeOutputSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    platform: {
+      type: "string",
+      enum: ["ios_screen_time", "unknown"],
+    },
+    date: {
+      type: "string",
+      description: "Date shown in the screenshot as YYYY-MM-DD, or an empty string.",
+    },
+    items: {
+      type: "array",
+      maxItems: 50,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          appName: { type: "string" },
+          minutes: { type: "integer", minimum: 0, maximum: 1440 },
+          originalText: { type: "string" },
+          confidence: { type: "number", minimum: 0, maximum: 1 },
+        },
+        required: ["appName", "minutes", "originalText", "confidence"],
+      },
+    },
+    warnings: {
+      type: "array",
+      maxItems: 10,
+      items: { type: "string" },
+    },
   },
-  {
-    id: "parsed_github",
-    appName: "GitHub",
-    minutes: 36,
-    originalText: "GitHub 36m",
-    confidence: 0.94,
-  },
-  {
-    id: "parsed_notion",
-    appName: "Notion",
-    minutes: 28,
-    originalText: "Notion 28m",
-    confidence: 0.89,
-  },
-  {
-    id: "parsed_instagram",
-    appName: "Instagram",
-    minutes: 131,
-    originalText: "Instagram 2h 11m",
-    confidence: 0.92,
-  },
-  {
-    id: "parsed_youtube",
-    appName: "YouTube",
-    minutes: 65,
-    originalText: "YouTube 1h 05m",
-    confidence: 0.9,
-  },
-  {
-    id: "parsed_tiktok",
-    appName: "TikTok",
-    minutes: 45,
-    originalText: "TikTok 45m",
-    confidence: 0.91,
-  },
-];
+  required: ["platform", "date", "items", "warnings"],
+} as const;
 
 function createError(
   code: AnalyzeScreenTimeErrorCode,
@@ -87,8 +95,11 @@ function createError(
 }
 
 export function validateScreenTimeImage(file: File) {
-  if (!file.type.startsWith("image/")) {
-    return createError("INVALID_IMAGE", "Please upload an image file.");
+  if (!supportedImageMediaTypes.has(file.type as SupportedImageMediaType)) {
+    return createError(
+      "INVALID_IMAGE",
+      "Please upload a PNG, JPEG, GIF, or WebP image.",
+    );
   }
 
   if (file.size > maxUploadBytes) {
@@ -107,15 +118,77 @@ export async function analyzeScreenTimeScreenshot(
     return validationError;
   }
 
-  // Placeholder for the real vision/OCR model call. The API contract is stable;
-  // only this implementation needs to change when OpenAI Vision is connected.
-  await file.arrayBuffer();
+  const client = getAnthropicClient();
+  const imageData = Buffer.from(await file.arrayBuffer()).toString("base64");
+  const message = await client.messages.parse(
+    {
+      model: process.env.ANTHROPIC_SCREEN_TIME_MODEL ?? defaultScreenTimeModel,
+      max_tokens: 2500,
+      temperature: 0,
+      system:
+        "You are a precise OCR and data extraction engine. Extract only information visible in the screenshot. Never classify apps, infer identity dimensions, calculate a score, or invent rows that are not visible.",
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: {
+                type: "base64",
+                media_type: file.type as SupportedImageMediaType,
+                data: imageData,
+              },
+            },
+            {
+              type: "text",
+              text: [
+                "Extract the individual app usage rows from this Screen Time screenshot.",
+                "Ignore total or summary rows such as All Usage, Total Screen Time, and category totals.",
+                "Convert durations to whole minutes. Keep app names exactly as displayed, including package IDs or truncation when the full name is not visible.",
+                "Do not infer rows below the crop. Add a warning when the screenshot appears cropped or some names are truncated.",
+                "Return an empty items array if no individual app rows are visible.",
+              ].join(" "),
+            },
+          ],
+        },
+      ],
+      output_config: {
+        format: jsonSchemaOutputFormat(screenTimeOutputSchema),
+      },
+    },
+    { timeout: 30_000 },
+  );
+  const parsedOutput = message.parsed_output;
+
+  if (!parsedOutput || parsedOutput.items.length === 0) {
+    return createError(
+      "NO_SCREEN_TIME_DATA",
+      "No individual app usage rows were found in this screenshot.",
+    );
+  }
+
+  const items = parsedOutput.items
+    .map((item) => ({
+      id: `parsed_${crypto.randomUUID()}`,
+      appName: item.appName.trim(),
+      minutes: Math.max(0, Math.min(1440, Math.round(item.minutes))),
+      originalText: item.originalText.trim() || undefined,
+      confidence: Math.max(0, Math.min(1, item.confidence)),
+    }))
+    .filter((item) => item.appName.length > 0 && item.minutes > 0);
+
+  if (items.length === 0) {
+    return createError(
+      "NO_SCREEN_TIME_DATA",
+      "No valid app usage rows were found in this screenshot.",
+    );
+  }
 
   return {
     importId: crypto.randomUUID(),
-    date: new Date().toISOString().slice(0, 10),
-    platform: "ios_screen_time",
-    items: mockParsedItems,
-    warnings: [],
+    date: parsedOutput.date.trim() || undefined,
+    platform: parsedOutput.platform,
+    items,
+    warnings: parsedOutput.warnings.map((warning) => warning.trim()).filter(Boolean),
   };
 }

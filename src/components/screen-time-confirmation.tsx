@@ -19,9 +19,11 @@ import type {
 } from "@/lib/identity-score";
 
 export type ScreenTimeConfirmationStatus = "parsing" | "ready" | "error";
+type ScreenTimeImportSource = "upload" | "paste";
 
 type ScreenTimeConfirmationProps = {
   status: ScreenTimeConfirmationStatus;
+  source: ScreenTimeImportSource | null;
   items: ScreenTimeItem[];
   screenshotUrl: string | null;
   errorMessage?: string | null;
@@ -42,6 +44,7 @@ function confidenceLabel(confidence?: number) {
 
 export function ScreenTimeConfirmation({
   status,
+  source,
   items,
   screenshotUrl,
   errorMessage,
@@ -53,12 +56,19 @@ export function ScreenTimeConfirmation({
 }: ScreenTimeConfirmationProps) {
   const isParsing = status === "parsing";
   const hasItems = items.length > 0;
+  const title = isParsing
+    ? source === "paste"
+      ? "Screenshot pasted"
+      : "Screenshot uploaded"
+    : "Review import";
   const subtitle =
     status === "parsing"
-      ? "Reading screenshot"
+      ? "Analyzing with Claude"
       : status === "error"
         ? "Import failed"
-        : `${items.length} apps detected`;
+        : `${items.length} apps detected · ${
+            source === "paste" ? "Pasted from clipboard" : "Uploaded"
+          }`;
 
   return (
     <div className="fixed inset-0 z-40 flex items-end bg-black/20 px-3 pb-3 pt-12 backdrop-blur-sm sm:items-center sm:justify-center sm:p-6">
@@ -79,7 +89,7 @@ export function ScreenTimeConfirmation({
             )}
             <div className="min-w-0">
               <h2 className="truncate text-[17px] font-semibold text-[#111815]">
-                Review import
+                {title}
               </h2>
               <p className="mt-0.5 text-sm text-[#68736d]">
                 {subtitle}
@@ -125,7 +135,10 @@ export function ScreenTimeConfirmation({
               aria-hidden="true"
             />
             <p className="mt-4 text-base font-semibold text-[#111815]">
-              Reading Screen Time
+              {source === "paste" ? "Image received" : "Upload received"}
+            </p>
+            <p className="mt-2 text-sm text-[#68736d]">
+              Reading Screen Time with Claude
             </p>
           </div>
         ) : null}

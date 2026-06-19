@@ -33,7 +33,12 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json(result);
-  } catch {
+  } catch (error) {
+    console.error(
+      "Screen Time analysis failed:",
+      error instanceof Error ? error.message : "Unknown error",
+    );
+
     return errorResponse(
       {
         error: {

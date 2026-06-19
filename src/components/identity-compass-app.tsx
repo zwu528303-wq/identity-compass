@@ -4,6 +4,7 @@ import {
   BookOpen,
   CalendarDays,
   ChevronDown,
+  ClipboardPaste,
   Clock3,
   Compass,
   Goal,
@@ -17,8 +18,16 @@ import {
   Settings,
   TrendingUp,
   UserRound,
+  X,
 } from "lucide-react";
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ChangeEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { ScreenTimeConfirmation } from "@/components/screen-time-confirmation";
 import {
   calculateIdentityScore,
@@ -36,6 +45,7 @@ import type {
 } from "@/lib/identity-score";
 
 type ImportStatus = "idle" | "parsing" | "ready" | "error";
+type ImportSource = "upload" | "paste";
 
 const dimensionIcons = {
   Builder: Leaf,
@@ -73,8 +83,10 @@ export function IdentityCompassApp() {
     useState<ScreenTimeItem[]>(defaultScreenTimeItems);
   const [draftItems, setDraftItems] = useState<ScreenTimeItem[]>([]);
   const [importStatus, setImportStatus] = useState<ImportStatus>("idle");
+  const [importSource, setImportSource] = useState<ImportSource | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
+  const [pastePromptOpen, setPastePromptOpen] = useState(false);
   const importRequestId = useRef(0);
 
   const scoreResult = useMemo(
@@ -124,8 +136,10 @@ export function IdentityCompassApp() {
   function closeImportReview() {
     importRequestId.current += 1;
     setImportStatus("idle");
+    setImportSource(null);
     setDraftItems([]);
     setImportError(null);
+    setPastePromptOpen(false);
   }
 
   function confirmImport() {
@@ -133,20 +147,17 @@ export function IdentityCompassApp() {
     closeImportReview();
   }
 
-  async function handleScreenshot(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-
-    if (!file) {
-      return;
-    }
-
+  const analyzeScreenshotFile = useCallback(
+    async (file: File, source: ImportSource) => {
     const requestId = importRequestId.current + 1;
     importRequestId.current = requestId;
 
     setScreenshotUrl(URL.createObjectURL(file));
     setImportStatus("parsing");
+    setImportSource(source);
     setImportError(null);
     setDraftItems([]);
+    setPastePromptOpen(false);
 
     const formData = new FormData();
     formData.append("screenshot", file);
@@ -191,8 +202,47 @@ export function IdentityCompassApp() {
           : "Could not parse this screenshot.",
       );
       setImportStatus("error");
-    } finally {
-      event.target.value = "";
+    }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    function handleWindowPaste(event: ClipboardEvent) {
+      const target = event.target;
+
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        (target instanceof HTMLElement && target.isContentEditable)
+      ) {
+        return;
+      }
+
+      const imageItem = Array.from(event.clipboardData?.items ?? []).find(
+        (item) => item.kind === "file" && item.type.startsWith("image/"),
+      );
+      const file = imageItem?.getAsFile();
+
+      if (!file) {
+        return;
+      }
+
+      event.preventDefault();
+      setPastePromptOpen(false);
+      void analyzeScreenshotFile(file, "paste");
+    }
+
+    window.addEventListener("paste", handleWindowPaste);
+    return () => window.removeEventListener("paste", handleWindowPaste);
+  }, [analyzeScreenshotFile]);
+
+  async function handleScreenshot(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (file) {
+      await analyzeScreenshotFile(file, "upload");
     }
   }
 
@@ -210,6 +260,15 @@ export function IdentityCompassApp() {
             </h1>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPastePromptOpen(true)}
+              className="hidden h-11 items-center justify-center gap-2 rounded-full border border-black/10 bg-white px-4 text-sm font-semibold text-[#0b9f55] shadow-sm transition hover:bg-[#f4fbf7] lg:inline-flex"
+              title="Paste screenshot"
+            >
+              <ClipboardPaste size={17} aria-hidden="true" />
+              Paste
+            </button>
             <label className="hidden h-11 cursor-pointer items-center justify-center gap-2 rounded-full border border-black/10 bg-white px-4 text-sm font-semibold text-[#0b9f55] shadow-sm transition hover:bg-[#f4fbf7] lg:inline-flex">
               <ImageUp size={17} aria-hidden="true" />
               Upload
@@ -234,6 +293,7 @@ export function IdentityCompassApp() {
           <ScreenTimeInput
             screenshotUrl={screenshotUrl}
             onScreenshotChange={handleScreenshot}
+            onPasteScreenshot={() => setPastePromptOpen(true)}
           />
         </div>
 
@@ -319,9 +379,14 @@ export function IdentityCompassApp() {
 
       </div>
 
+      {pastePromptOpen ? (
+        <PasteScreenshotPrompt onClose={() => setPastePromptOpen(false)} />
+      ) : null}
+
       {importStatus !== "idle" ? (
         <ScreenTimeConfirmation
           status={importStatus}
+          source={importSource}
           items={draftItems}
           screenshotUrl={screenshotUrl}
           errorMessage={importError}
@@ -393,9 +458,11 @@ function SidebarItem({
 function ScreenTimeInput({
   screenshotUrl,
   onScreenshotChange,
+  onPasteScreenshot,
 }: {
   screenshotUrl: string | null;
   onScreenshotChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onPasteScreenshot: () => void;
 }) {
   return (
     <section className="rounded-[24px] border border-dashed border-[#0b9f55]/30 bg-[#f4fbf7] px-5 py-4">
@@ -407,20 +474,30 @@ function ScreenTimeInput({
           <div className="min-w-0">
             <h2 className="text-[17px] font-semibold">Screen Time screenshot</h2>
             <p className="mt-1 text-sm leading-5 text-[#59645f]">
-              Upload the screenshot, then confirm the detected app usage below.
+              Upload or paste a screenshot, then review the detected apps.
             </p>
           </div>
         </div>
-        <label className="inline-flex h-12 cursor-pointer items-center justify-center gap-2 rounded-full bg-[#0b9f55] px-5 text-sm font-semibold text-white shadow-[0_10px_25px_rgba(11,159,85,0.22)] transition hover:bg-[#087d43]">
-          <ImageUp size={18} aria-hidden="true" />
-          Upload
-          <input
-            type="file"
-            accept="image/*"
-            className="sr-only"
-            onChange={onScreenshotChange}
-          />
-        </label>
+        <div className="grid grid-cols-2 gap-2 sm:flex">
+          <button
+            type="button"
+            onClick={onPasteScreenshot}
+            className="inline-flex h-12 items-center justify-center gap-2 rounded-full border border-[#0b9f55]/20 bg-white px-4 text-sm font-semibold text-[#0b9f55] transition hover:bg-[#edf8f2]"
+          >
+            <ClipboardPaste size={18} aria-hidden="true" />
+            Paste
+          </button>
+          <label className="inline-flex h-12 cursor-pointer items-center justify-center gap-2 rounded-full bg-[#0b9f55] px-4 text-sm font-semibold text-white shadow-[0_10px_25px_rgba(11,159,85,0.22)] transition hover:bg-[#087d43]">
+            <ImageUp size={18} aria-hidden="true" />
+            Upload
+            <input
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              onChange={onScreenshotChange}
+            />
+          </label>
+        </div>
       </div>
       {screenshotUrl ? (
         <div className="mt-4 flex items-center gap-3 rounded-[18px] bg-white p-3 ring-1 ring-black/[0.05]">
@@ -441,6 +518,48 @@ function ScreenTimeInput({
         </div>
       ) : null}
     </section>
+  );
+}
+
+function PasteScreenshotPrompt({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/20 p-4 backdrop-blur-sm">
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="paste-screenshot-title"
+        className="relative w-full max-w-[420px] rounded-[28px] bg-white px-7 py-8 text-center shadow-[0_24px_90px_rgba(17,24,21,0.2)] ring-1 ring-black/[0.06]"
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-full text-[#4e5853] transition hover:bg-black/[0.05]"
+          aria-label="Close paste prompt"
+          title="Close"
+        >
+          <X size={20} aria-hidden="true" />
+        </button>
+        <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[#f2faf5] text-[#0b9f55]">
+          <ClipboardPaste size={26} aria-hidden="true" />
+        </div>
+        <h2
+          id="paste-screenshot-title"
+          className="mt-5 text-[20px] font-semibold text-[#111815]"
+        >
+          Paste screenshot
+        </h2>
+        <div className="mt-5 flex items-center justify-center gap-2 text-[#29332e]">
+          <kbd className="grid h-11 min-w-11 place-items-center rounded-lg border border-black/10 bg-[#f7f8f7] px-3 text-base font-semibold shadow-sm">
+            ⌘
+          </kbd>
+          <span className="text-sm text-[#68736d]">+</span>
+          <kbd className="grid h-11 min-w-11 place-items-center rounded-lg border border-black/10 bg-[#f7f8f7] px-3 text-base font-semibold shadow-sm">
+            V
+          </kbd>
+        </div>
+        <p className="mt-4 text-sm text-[#68736d]">Ready for an image</p>
+      </section>
+    </div>
   );
 }
 
