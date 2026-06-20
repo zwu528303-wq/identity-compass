@@ -13,6 +13,7 @@ import {
   Info,
   Leaf,
   ListChecks,
+  Loader2,
   PenLine,
   Plus,
   Settings,
@@ -30,22 +31,22 @@ import {
 } from "react";
 import { ScreenTimeConfirmation } from "@/components/screen-time-confirmation";
 import {
-  calculateIdentityScore,
-  defaultScreenTimeItems,
+  dimensionColors,
   formatDuration,
   goals,
 } from "@/lib/identity-score";
+import type { IdentityAnalysisResult } from "@/lib/identity-analysis-contract";
 import type {
   AnalyzeScreenTimeResponse,
 } from "@/lib/screen-time-parser";
 import type {
-  ContributionItem,
   IdentityMixItem,
   ScreenTimeItem,
 } from "@/lib/identity-score";
 
 type ImportStatus = "idle" | "parsing" | "ready" | "error";
 type ImportSource = "upload" | "paste";
+type AnalysisStatus = "idle" | "loading" | "ready" | "error";
 
 const dimensionIcons = {
   Builder: Leaf,
@@ -80,7 +81,7 @@ function makeId() {
 export function IdentityCompassApp() {
   const [goalName, setGoalName] = useState("Founder");
   const [screenTimeItems, setScreenTimeItems] =
-    useState<ScreenTimeItem[]>(defaultScreenTimeItems);
+    useState<ScreenTimeItem[]>([]);
   const [draftItems, setDraftItems] = useState<ScreenTimeItem[]>([]);
   const [importStatus, setImportStatus] = useState<ImportStatus>("idle");
   const [importSource, setImportSource] = useState<ImportSource | null>(null);
@@ -88,17 +89,26 @@ export function IdentityCompassApp() {
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
   const [pastePromptOpen, setPastePromptOpen] = useState(false);
   const importRequestId = useRef(0);
+  const analysisRequestId = useRef(0);
+  const [analysis, setAnalysis] = useState<IdentityAnalysisResult | null>(null);
+  const [analysisStatus, setAnalysisStatus] =
+    useState<AnalysisStatus>("idle");
 
-  const scoreResult = useMemo(
-    () => calculateIdentityScore(screenTimeItems, goalName),
-    [screenTimeItems, goalName],
+  const goal = goals.find((item) => item.name === goalName) ?? goals[0];
+  const score = analysis?.score ?? 0;
+  const hasAnalysis = analysis !== null;
+  const topMix = useMemo<IdentityMixItem[]>(
+    () =>
+      analysis?.identityMix.map((item) => ({
+        ...item,
+        color: dimensionColors[item.dimension],
+      })) ?? [],
+    [analysis],
   );
-  const goal = scoreResult.goal;
-  const score = scoreResult.score;
-  const delta = score - 67;
-  const topMix = scoreResult.topMix;
-  const pullingUp = scoreResult.pullingUp;
-  const pullingDown = scoreResult.pullingDown;
+  const topActivities = useMemo(
+    () => [...screenTimeItems].sort((a, b) => b.minutes - a.minutes).slice(0, 6),
+    [screenTimeItems],
+  );
 
   useEffect(() => {
     return () => {
@@ -142,9 +152,54 @@ export function IdentityCompassApp() {
     setPastePromptOpen(false);
   }
 
-  function confirmImport() {
-    setScreenTimeItems(draftItems);
+  async function requestIdentityAnalysis(
+    nextGoalName: string,
+    items: ScreenTimeItem[],
+  ) {
+    const requestId = analysisRequestId.current + 1;
+    analysisRequestId.current = requestId;
+    setAnalysis(null);
+    setAnalysisStatus("loading");
+
+    try {
+      const response = await fetch("/api/identity/analysis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          goalIdentity: nextGoalName,
+          items: items.map(({ appName, minutes }) => ({
+            appName,
+            minutes,
+          })),
+        }),
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          payload?.error?.message ?? "Could not generate identity analysis.",
+        );
+      }
+
+      if (analysisRequestId.current !== requestId) {
+        return;
+      }
+
+      setAnalysis(payload as IdentityAnalysisResult);
+      setAnalysisStatus("ready");
+    } catch {
+      if (analysisRequestId.current === requestId) {
+        setAnalysisStatus("error");
+      }
+    }
+  }
+
+  async function confirmImport() {
+    const confirmedItems = draftItems;
+
+    setScreenTimeItems(confirmedItems);
     closeImportReview();
+    await requestIdentityAnalysis(goalName, confirmedItems);
   }
 
   const analyzeScreenshotFile = useCallback(
@@ -289,17 +344,26 @@ export function IdentityCompassApp() {
           </div>
         </header>
 
-        <div className="lg:hidden">
-          <ScreenTimeInput
-            screenshotUrl={screenshotUrl}
-            onScreenshotChange={handleScreenshot}
-            onPasteScreenshot={() => setPastePromptOpen(true)}
-          />
-        </div>
-
-        <section className="grid gap-6 rounded-[28px] bg-white px-7 py-8 shadow-[0_16px_50px_rgba(17,24,21,0.06)] ring-1 ring-black/[0.04] sm:grid-cols-[0.78fr_1.22fr] sm:px-9 lg:h-[clamp(238px,27vh,318px)] lg:gap-4 lg:px-7 lg:py-5">
-          <div className="flex min-w-0 flex-col justify-center border-black/10 sm:border-r sm:pr-8 lg:pr-7">
-            <div className="mb-4 text-xs font-semibold uppercase text-[#4e5853] lg:mb-3">
+        <section
+          className={[
+            "grid rounded-[28px] bg-white shadow-[0_16px_50px_rgba(17,24,21,0.06)] ring-1 ring-black/[0.04] sm:grid-cols-[0.78fr_1.22fr] sm:px-9 lg:h-[clamp(238px,27vh,318px)] lg:gap-4 lg:px-7 lg:py-5",
+            hasAnalysis
+              ? "gap-6 px-7 py-8"
+              : "grid-cols-[minmax(0,1fr)_112px] gap-4 px-5 py-6 sm:gap-6 sm:px-9 sm:py-8",
+          ].join(" ")}
+        >
+          <div
+            className={[
+              "flex min-w-0 flex-col justify-center border-black/10 sm:border-r sm:pr-8 lg:pr-7",
+              hasAnalysis ? "" : "border-r pr-4",
+            ].join(" ")}
+          >
+            <div
+              className={[
+                "text-xs font-semibold uppercase text-[#4e5853] lg:mb-3",
+                hasAnalysis ? "mb-4" : "mb-2 sm:mb-4",
+              ].join(" ")}
+            >
               Goal Identity
             </div>
             <div className="relative mb-3">
@@ -308,7 +372,21 @@ export function IdentityCompassApp() {
                 style={{ fontSize: "clamp(32px, 3.1vw, 48px)", lineHeight: 1 }}
                 value={goalName}
                 aria-label="Goal identity"
-                onChange={(event) => setGoalName(event.target.value)}
+                onChange={(event) => {
+                  const nextGoalName = event.target.value;
+                  setGoalName(nextGoalName);
+
+                  if (screenTimeItems.length > 0) {
+                    void requestIdentityAnalysis(
+                      nextGoalName,
+                      screenTimeItems,
+                    );
+                  } else {
+                    analysisRequestId.current += 1;
+                    setAnalysis(null);
+                    setAnalysisStatus("idle");
+                  }
+                }}
               >
                 {goals.map((item) => (
                   <option key={item.name}>{item.name}</option>
@@ -320,11 +398,23 @@ export function IdentityCompassApp() {
                 aria-hidden="true"
               />
             </div>
-            <p className="max-w-[220px] text-[19px] leading-7 text-[#4c5651] lg:text-[16px] lg:leading-6">
+            <p
+              className={[
+                "max-w-[220px] text-[#4c5651] lg:text-[16px] lg:leading-6",
+                hasAnalysis
+                  ? "text-[19px] leading-7"
+                  : "text-[15px] leading-5 sm:text-[19px] sm:leading-7",
+              ].join(" ")}
+            >
               {goal.description}
             </p>
             <Goal
-              className="mt-9 h-[72px] w-[72px] text-[#0b9f55] lg:mt-4 lg:h-12 lg:w-12 xl:h-14 xl:w-14"
+              className={[
+                "text-[#0b9f55] lg:mt-4 lg:h-12 lg:w-12 xl:h-14 xl:w-14",
+                hasAnalysis
+                  ? "mt-9 h-[72px] w-[72px]"
+                  : "mt-4 hidden h-12 w-12 sm:block",
+              ].join(" ")}
               size={72}
               strokeWidth={1.7}
               aria-hidden="true"
@@ -334,48 +424,80 @@ export function IdentityCompassApp() {
           <div className="flex min-w-0 flex-col items-center justify-center text-center">
             <div className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase text-[#4e5853]">
               Identity Score
-              <Info size={15} aria-label="Score is based on the app usage you confirm below." />
+              <Info
+                size={15}
+                aria-label="Score, identity mix, and observation use the same analysis."
+              />
             </div>
             <div className="flex items-end justify-center leading-none">
-              <span className="text-[116px] font-semibold text-[#08a451] sm:text-[150px] lg:!text-[100px] xl:!text-[110px]">
-                {score}
+              <span
+                className={[
+                  "font-semibold text-[#08a451] lg:!text-[100px] xl:!text-[110px]",
+                  hasAnalysis
+                    ? "text-[116px] sm:text-[150px]"
+                    : "text-[68px] sm:text-[150px]",
+                ].join(" ")}
+              >
+                {hasAnalysis ? score : "--"}
               </span>
-              <span className="mb-3 ml-2 text-[20px] text-[#29332e]">/ 100</span>
+              {hasAnalysis ? (
+                <span className="mb-3 ml-2 text-[20px] text-[#29332e]">
+                  / 100
+                </span>
+              ) : null}
             </div>
-            <div
-              className={[
-                "mb-3 inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold lg:py-1.5",
-                delta >= 0
-                  ? "bg-[#eefaf2] text-[#0b8e4c]"
-                  : "bg-[#fff0f1] text-[#c63043]",
-              ].join(" ")}
-            >
-              <TrendingUp
-                size={16}
-                className={delta >= 0 ? "" : "rotate-180"}
-                aria-hidden="true"
-              />
-              {delta >= 0 ? "+" : ""}
-              {delta} pts vs yesterday
-            </div>
-            <p className="max-w-[280px] text-[18px] leading-7 text-[#29332e] lg:text-[16px] lg:leading-6">
-              You are{" "}
-              <span className="font-semibold text-[#08a451]">{score}%</span>{" "}
-              aligned with your goal
-            </p>
+            {hasAnalysis ? (
+              <>
+                <p className="max-w-[280px] text-[18px] leading-7 text-[#29332e] lg:text-[16px] lg:leading-6">
+                  You are{" "}
+                  <span className="font-semibold text-[#08a451]">{score}%</span>{" "}
+                  aligned with your goal
+                </p>
+                <p className="mt-1 text-[11px] font-semibold uppercase text-[#7a847f]">
+                  Experimental identity estimate
+                </p>
+              </>
+            ) : (
+              <p className="mt-2 max-w-[280px] text-[13px] leading-5 text-[#59645f] sm:text-[18px] sm:leading-7 lg:text-[16px] lg:leading-6">
+                {analysisStatus === "loading"
+                  ? "Reading today's pattern"
+                  : analysisStatus === "error"
+                    ? "Analysis couldn't finish"
+                    : "Waiting for today's Screen Time"}
+              </p>
+            )}
           </div>
         </section>
 
-        <AlignmentBar
-          score={score}
-          goalIdentity={goal.name}
-          antiIdentity={goal.antiIdentity}
-        />
+        {hasAnalysis ? (
+          <>
+            <AlignmentBar
+              score={score}
+              goalIdentity={goal.name}
+              antiIdentity={goal.antiIdentity}
+            />
 
-        <section className="grid gap-5 sm:grid-cols-[1fr_1.1fr] lg:min-h-0 lg:flex-1 lg:gap-4">
-          <IdentityMix items={topMix} />
-          <ScoreDrivers pullingUp={pullingUp} pullingDown={pullingDown} />
-        </section>
+            <section className="grid gap-5 sm:grid-cols-[1fr_1.1fr] lg:min-h-0 lg:flex-1 lg:gap-4">
+              <IdentityMix items={topMix} />
+              <ActivitySummary
+                items={topActivities}
+                observation={analysis.observation}
+              />
+            </section>
+          </>
+        ) : analysisStatus === "loading" || analysisStatus === "error" ? (
+          <AnalysisStatusState
+            status={analysisStatus}
+            onRetry={() => {
+              void requestIdentityAnalysis(goalName, screenTimeItems);
+            }}
+          />
+        ) : (
+          <EmptyAnalysisState
+            onPasteScreenshot={() => setPastePromptOpen(true)}
+            onScreenshotChange={handleScreenshot}
+          />
+        )}
 
       </div>
 
@@ -455,67 +577,83 @@ function SidebarItem({
   );
 }
 
-function ScreenTimeInput({
-  screenshotUrl,
+function EmptyAnalysisState({
   onScreenshotChange,
   onPasteScreenshot,
 }: {
-  screenshotUrl: string | null;
   onScreenshotChange: (event: ChangeEvent<HTMLInputElement>) => void;
   onPasteScreenshot: () => void;
 }) {
   return (
-    <section className="rounded-[24px] border border-dashed border-[#0b9f55]/30 bg-[#f4fbf7] px-5 py-4">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white text-[#0b9f55] shadow-sm">
-            <ImageUp size={22} aria-hidden="true" />
-          </div>
-          <div className="min-w-0">
-            <h2 className="text-[17px] font-semibold">Screen Time screenshot</h2>
-            <p className="mt-1 text-sm leading-5 text-[#59645f]">
-              Upload or paste a screenshot, then review the detected apps.
-            </p>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-2 sm:flex">
-          <button
-            type="button"
-            onClick={onPasteScreenshot}
-            className="inline-flex h-12 items-center justify-center gap-2 rounded-full border border-[#0b9f55]/20 bg-white px-4 text-sm font-semibold text-[#0b9f55] transition hover:bg-[#edf8f2]"
-          >
-            <ClipboardPaste size={18} aria-hidden="true" />
-            Paste
-          </button>
-          <label className="inline-flex h-12 cursor-pointer items-center justify-center gap-2 rounded-full bg-[#0b9f55] px-4 text-sm font-semibold text-white shadow-[0_10px_25px_rgba(11,159,85,0.22)] transition hover:bg-[#087d43]">
-            <ImageUp size={18} aria-hidden="true" />
-            Upload
-            <input
-              type="file"
-              accept="image/*"
-              className="sr-only"
-              onChange={onScreenshotChange}
-            />
-          </label>
-        </div>
+    <section className="flex min-h-[360px] flex-col items-center justify-center rounded-[28px] bg-white px-6 py-12 text-center shadow-[0_16px_50px_rgba(17,24,21,0.05)] ring-1 ring-black/[0.04] lg:min-h-0 lg:flex-1">
+      <div className="grid h-16 w-16 place-items-center rounded-full bg-[#f2faf5] text-[#0b9f55]">
+        <ImageUp size={28} strokeWidth={1.8} aria-hidden="true" />
       </div>
-      {screenshotUrl ? (
-        <div className="mt-4 flex items-center gap-3 rounded-[18px] bg-white p-3 ring-1 ring-black/[0.05]">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={screenshotUrl}
-            alt="Uploaded Screen Time screenshot preview"
-            className="h-16 w-16 rounded-2xl object-cover"
+      <h2 className="mt-5 text-[24px] font-semibold text-[#111815]">
+        Add today&apos;s Screen Time
+      </h2>
+      <p className="mt-2 max-w-[410px] text-[15px] leading-6 text-[#68736d]">
+        Your result appears only after you review the detected apps.
+      </p>
+      <div className="mt-7 grid w-full max-w-[330px] grid-cols-2 gap-3">
+        <button
+          type="button"
+          onClick={onPasteScreenshot}
+          className="inline-flex h-12 items-center justify-center gap-2 rounded-full border border-[#0b9f55]/20 bg-white px-4 text-sm font-semibold text-[#0b9f55] transition hover:bg-[#edf8f2]"
+        >
+          <ClipboardPaste size={18} aria-hidden="true" />
+          Paste
+        </button>
+        <label className="inline-flex h-12 cursor-pointer items-center justify-center gap-2 rounded-full bg-[#0b9f55] px-4 text-sm font-semibold text-white shadow-[0_10px_25px_rgba(11,159,85,0.22)] transition hover:bg-[#087d43]">
+          <ImageUp size={18} aria-hidden="true" />
+          Upload
+          <input
+            type="file"
+            accept="image/*"
+            className="sr-only"
+            onChange={onScreenshotChange}
           />
-          <div>
-            <p className="text-sm font-semibold text-[#13201a]">
-              Screenshot attached
-            </p>
-            <p className="mt-1 text-xs text-[#6a746f]">
-              MVP uses editable detected rows for now.
-            </p>
-          </div>
-        </div>
+        </label>
+      </div>
+    </section>
+  );
+}
+
+function AnalysisStatusState({
+  status,
+  onRetry,
+}: {
+  status: "loading" | "error";
+  onRetry: () => void;
+}) {
+  const isLoading = status === "loading";
+
+  return (
+    <section className="flex min-h-[360px] flex-col items-center justify-center rounded-[28px] bg-white px-6 py-12 text-center shadow-[0_16px_50px_rgba(17,24,21,0.05)] ring-1 ring-black/[0.04] lg:min-h-0 lg:flex-1">
+      <div className="grid h-16 w-16 place-items-center rounded-full bg-[#f2faf5] text-[#0b9f55]">
+        <Loader2
+          className={isLoading ? "animate-spin" : ""}
+          size={28}
+          strokeWidth={1.8}
+          aria-hidden="true"
+        />
+      </div>
+      <h2 className="mt-5 text-[24px] font-semibold text-[#111815]">
+        {isLoading ? "Reading today's pattern" : "Analysis couldn't finish"}
+      </h2>
+      <p className="mt-2 max-w-[430px] text-[15px] leading-6 text-[#68736d]">
+        {isLoading
+          ? "Score, identity mix, and observation are being calibrated together."
+          : "Your confirmed app times are still available for another attempt."}
+      </p>
+      {!isLoading ? (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-7 inline-flex h-12 items-center justify-center rounded-full bg-[#0b9f55] px-6 text-sm font-semibold text-white shadow-[0_10px_25px_rgba(11,159,85,0.22)] transition hover:bg-[#087d43]"
+        >
+          Try again
+        </button>
       ) : null}
     </section>
   );
@@ -671,18 +809,18 @@ function IdentityMix({
   );
 }
 
-function ScoreDrivers({
-  pullingUp,
-  pullingDown,
+function ActivitySummary({
+  items,
+  observation,
 }: {
-  pullingUp: ContributionItem[];
-  pullingDown: ContributionItem[];
+  items: ScreenTimeItem[];
+  observation: string;
 }) {
   return (
     <section className="overflow-hidden rounded-[28px] bg-white px-6 py-7 shadow-[0_16px_50px_rgba(17,24,21,0.05)] ring-1 ring-black/[0.04] lg:px-5 lg:py-3.5">
       <div className="mb-7 flex items-center justify-between gap-4 lg:mb-3">
         <div className="text-xs font-semibold uppercase text-[#4e5853]">
-          What Shaped Your Score
+          Today&apos;s Activity
         </div>
         <button
           type="button"
@@ -691,45 +829,16 @@ function ScoreDrivers({
           View all
         </button>
       </div>
-      <div className="grid grid-cols-2 divide-x divide-black/10">
-        <DriverColumn
-          title="Pulling You Up"
-          positive
-          items={pullingUp}
-        />
-        <DriverColumn title="Pulling You Down" items={pullingDown} />
-      </div>
-    </section>
-  );
-}
-
-function DriverColumn({
-  title,
-  items,
-  positive = false,
-}: {
-  title: string;
-  items: ContributionItem[];
-  positive?: boolean;
-}) {
-  return (
-    <div className={positive ? "pr-3" : "pl-3"}>
-      <div
-        className={[
-          "mb-4 flex items-center gap-2 text-[11px] font-semibold uppercase lg:mb-2.5 lg:text-[10px]",
-          positive ? "text-[#0b9f55]" : "text-[#cf3044]",
-        ].join(" ")}
-      >
-        {title}
-        <TrendingUp
-          size={14}
-          className={positive ? "" : "rotate-180"}
-          aria-hidden="true"
-        />
-      </div>
-      <div className="space-y-4 lg:space-y-2">
+      <p className="mb-4 max-w-[680px] text-[14px] font-medium leading-6 text-[#29332e] lg:text-[13px] lg:leading-5">
+        {observation}
+      </p>
+      <div className="mb-4 h-px bg-black/[0.06] lg:mb-3" />
+      <div className="grid grid-cols-2 gap-x-5 gap-y-4 lg:gap-y-3">
         {items.map((item) => (
-          <div key={item.id} className="grid grid-cols-[30px_minmax(0,1fr)_auto] items-center gap-3">
+          <div
+            key={item.id}
+            className="grid min-w-0 grid-cols-[30px_minmax(0,1fr)_auto] items-center gap-3"
+          >
             <AppBadge app={item.appName} />
             <div className="min-w-0">
               <p className="truncate text-[14px] font-semibold lg:text-[13px]">
@@ -739,19 +848,10 @@ function DriverColumn({
                 {formatDuration(item.minutes)}
               </p>
             </div>
-            <p
-              className={[
-                "text-sm font-semibold lg:text-[13px]",
-                positive ? "text-[#0b9f55]" : "text-[#cf3044]",
-              ].join(" ")}
-            >
-              {item.contribution > 0 ? "+" : ""}
-              {item.contribution}
-            </p>
           </div>
         ))}
       </div>
-    </div>
+    </section>
   );
 }
 

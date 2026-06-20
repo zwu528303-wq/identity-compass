@@ -8,15 +8,8 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import {
-  dimensions,
-  formatDuration,
-  getResolvedDimension,
-} from "@/lib/identity-score";
-import type {
-  IdentityDimension,
-  ScreenTimeItem,
-} from "@/lib/identity-score";
+import { formatDuration } from "@/lib/identity-score";
+import type { ScreenTimeItem } from "@/lib/identity-score";
 
 export type ScreenTimeConfirmationStatus = "parsing" | "ready" | "error";
 type ScreenTimeImportSource = "upload" | "paste";
@@ -150,7 +143,7 @@ export function ScreenTimeConfirmation({
                 {items.map((item) => (
                   <div
                     key={item.id}
-                    className="grid gap-3 rounded-[20px] border border-black/[0.06] bg-[#fcfdfc] p-3 sm:grid-cols-[1fr_96px_148px_74px_40px] sm:items-center"
+                    className="grid gap-3 rounded-[20px] border border-black/[0.06] bg-[#fcfdfc] p-3 sm:grid-cols-[1fr_96px_74px_40px] sm:items-center"
                   >
                     <input
                       value={item.appName}
@@ -172,21 +165,6 @@ export function ScreenTimeConfirmation({
                       aria-label="Minutes"
                       className="min-w-0 rounded-2xl border border-black/[0.06] bg-white px-3 py-3 text-sm font-semibold outline-none focus:border-[#0b9f55]/45"
                     />
-                    <select
-                      value={getResolvedDimension(item)}
-                      onChange={(event) =>
-                        onUpdate(item.id, {
-                          dimensionOverride: event.target
-                            .value as IdentityDimension,
-                        })
-                      }
-                      aria-label="Identity dimension"
-                      className="min-w-0 rounded-2xl border border-black/[0.06] bg-white px-3 py-3 text-sm font-semibold outline-none focus:border-[#0b9f55]/45"
-                    >
-                      {dimensions.map((dimension) => (
-                        <option key={dimension}>{dimension}</option>
-                      ))}
-                    </select>
                     <div className="flex items-center justify-between gap-3 sm:block">
                       <span className="text-sm font-medium text-[#68736d] sm:hidden">
                         {formatDuration(item.minutes)}
